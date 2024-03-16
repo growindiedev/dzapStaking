@@ -16,7 +16,9 @@ export default function Home() {
           <Link href="/main">Launch App</Link>
         </Button>
         <Button className="min-w-[100px]" variant={'secondary'}>
-          Read docs
+          <Link href="https://docs.dzap.io/" target="blank">
+            Read docs
+          </Link>
         </Button>
       </section>
     </main>
