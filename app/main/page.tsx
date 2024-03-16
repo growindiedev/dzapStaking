@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { use, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -14,22 +14,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 
-import { useAccount, useReadContract, useWriteContract } from 'wagmi';
+import {
+  useAccount,
+  useBlockNumber,
+  useReadContract,
+  useWriteContract,
+  useWatchContractEvent,
+  useWatchBlocks,
+} from 'wagmi';
 import { contractAddress } from '@/abi/config';
 import { abi } from '@/abi/abi';
 import { useForm } from 'react-hook-form';
-
-//function getStakerInfo(address staker_) view returns (bool exist, uint256 stakedAmount, uint256 unclaimedRewards, uint256 claimCheckpoint, uint256 totalRewardsClaimed)
-// function getDetails() view returns (bool isPaused, bool resetClaimDelay, address stakeToken, address rewardToken, uint256 startBlock, uint256 endBlock, uint256 claimDelay, uint256 totalRewards, uint256 totalFundsStaked, uint256 totalRewardsDistributed)
-// 	function stake(uint256 amount_)
-//  function unstake()
-//  function claimRewards()
-// "event Staked(address indexed staker, uint256 stakedAmount)",
-// 	"event Unstaked(address indexed staker, uint256 stakedAmount)",
-// 	"event RewardClaimed(address indexed staker, uint256 amount)",
+import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/use-toast';
 
 const Main = () => {
-  const { register, handleSubmit, getValues, watch } = useForm({
+  const queryClient = useQueryClient();
+  const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       tokenAmount: 0,
     },
@@ -37,22 +38,45 @@ const Main = () => {
 
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const { data: blockNumber } = useBlockNumber({ watch: true });
 
-  const getDetails = useReadContract({
+  const {
+    data: getDetailsData,
+    queryKey: getDetailsDataQueryKey,
+    isSuccess: isGetDetailsDataSuccess,
+    isError: isGetDetailsDataError,
+    refetch: refetchGetDetails,
+  } = useReadContract({
     abi,
     address: contractAddress,
     functionName: 'getDetails',
   });
 
-  const getStakerInfo = useReadContract({
+  const {
+    data: getStakerInfoData,
+    queryKey: getStakerInfoQueryKey,
+    isSuccess: isGetStakerInfoDataSuccess,
+    isError: isGetStakerInfoDataError,
+    refetch: refetchGetStakerInfo,
+  } = useReadContract({
     abi,
     address: contractAddress,
     functionName: 'getStakerInfo',
     args: [address as '0xString'],
   });
 
-  console.log('getDetails', getDetails.data);
-  console.log('getStakerInfo', getStakerInfo.data);
+  useWatchBlocks({
+    blockTag: 'earliest',
+    onBlock(block) {
+      console.log('New block', block.number);
+      queryClient.invalidateQueries({
+        //queryKey: [getStakerInfoQueryKey, getDetailsDataQueryKey],
+        queryKey: getStakerInfoQueryKey,
+      });
+    },
+  });
+
+  const { toast } = useToast();
 
   return (
     <div className="flex  items-center justify-center h-full">
@@ -78,16 +102,16 @@ const Main = () => {
               <div className="flex gap-2">
                 <Badge variant="outline">Current claimable tokens</Badge>
                 <Badge>
-                  {getStakerInfo.data
-                    ? Number(getStakerInfo.data[2])
+                  {getStakerInfoData
+                    ? Number(getStakerInfoData[2])
                     : 'not available'}
                 </Badge>
               </div>
               <div className="flex gap-2">
                 <Badge variant="outline">Staked Amount</Badge>
                 <Badge variant="secondary">
-                  {getStakerInfo.data
-                    ? Number(getStakerInfo.data[1])
+                  {getStakerInfoData
+                    ? Number(getStakerInfoData[1])
                     : 'not available'}
                 </Badge>
               </div>
@@ -97,13 +121,27 @@ const Main = () => {
         <CardFooter className="flex flex-col gap-3">
           <Button
             className="w-full"
-            onClick={handleSubmit(async (data) => {
-              console.log('data', data);
-              await writeContractAsync({
-                address: contractAddress,
-                abi: abi,
-                functionName: 'claimRewards',
-              });
+            onClick={handleSubmit(async () => {
+              await writeContractAsync(
+                {
+                  address: contractAddress,
+                  abi: abi,
+                  functionName: 'claimRewards',
+                },
+                {
+                  onSuccess: () => {
+                    toast({
+                      description: 'Rewards claimed successfully',
+                    });
+                  },
+                  onError: (error) => {
+                    toast({
+                      description: error.message,
+                      variant: 'destructive',
+                    });
+                  },
+                },
+              );
             })}
           >
             Claim rewards
@@ -111,13 +149,28 @@ const Main = () => {
           <div className="flex w-full gap-3">
             <Button
               onClick={handleSubmit(async (data) => {
-                console.log('data', data);
-                await writeContractAsync({
-                  address: contractAddress,
-                  abi: abi,
-                  functionName: 'stake',
-                  args: [BigInt(data.tokenAmount)],
-                });
+                await writeContractAsync(
+                  {
+                    address: contractAddress,
+                    abi: abi,
+                    functionName: 'stake',
+                    args: [BigInt(data.tokenAmount)],
+                  },
+                  {
+                    onSuccess: () => {
+                      toast({
+                        description: 'Staked successfully',
+                      });
+                    },
+                    onError: (error) => {
+                      toast({
+                        description: error.message,
+                        variant: 'destructive',
+                      });
+                    },
+                  },
+                );
+                reset({ tokenAmount: 0 });
               })}
               variant="secondary"
               className="w-1/2"
@@ -128,12 +181,26 @@ const Main = () => {
               variant="secondary"
               className="w-1/2"
               onClick={handleSubmit(async (data) => {
-                console.log('data', data);
-                await writeContractAsync({
-                  address: contractAddress,
-                  abi: abi,
-                  functionName: 'unstake',
-                });
+                await writeContractAsync(
+                  {
+                    address: contractAddress,
+                    abi: abi,
+                    functionName: 'unstake',
+                  },
+                  {
+                    onSuccess: () => {
+                      toast({
+                        description: 'Unstaked successfully',
+                      });
+                    },
+                    onError: (error) => {
+                      toast({
+                        description: error.message,
+                        variant: 'destructive',
+                      });
+                    },
+                  },
+                );
               })}
             >
               Unstake

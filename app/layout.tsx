@@ -2,6 +2,7 @@
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { config } from '../config';
+import { Toaster } from '@/components/ui/toaster';
 
 import '@rainbow-me/rainbowkit/styles.css';
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
@@ -42,6 +43,7 @@ export default function RootLayout({
               <div className="flex flex-col h-[100vh]">
                 <Navbar />
                 {children}
+                <Toaster />
               </div>
             </RainbowKitProvider>
           </QueryClientProvider>
